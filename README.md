@@ -33,7 +33,7 @@ To kick off training or inference, run:
 
 - To run inference, use the `--checkpoint` to pass in a path to the Lightning module checkpoint.
 - `--loc-encoder-weights` should be the path to the SatCLIP location encoder weights. It is required for loading SatCLIP.
-- `--configs` should be specified as described in the previous section.
+- `--config` should be specified as described in the previous section.
 
 
 
@@ -41,13 +41,12 @@ To kick off training or inference, run:
 
 ```
 @article{wildsgeoshift2025,
-    title={Robustness to Geographic Distribution Shift Using Location Encoders},
-    url={https://ojs.aaai.org/index.php/AAAI/article/view/32457}, DOI={10.1609/aaai.v39i4.32457},
-    number={4},
-    journal={Proceedings of the AAAI Conference on Artificial Intelligence},
-    author={Klemmer, Konstantin and Rolf, Esther and Robinson, Caleb and Mackey, Lester and Rußwurm, Marc},
-    year={2025},
-    month={Apr.},
-    pages={4347-4355}
+      title={Robustness to Geographic Distribution Shift Using Location Encoders}, 
+      author={Ruth Crasto},
+      year={2025},
+      eprint={2503.02036},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2503.02036}, 
 }
 ```
