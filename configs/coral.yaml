@@ -1,0 +1,3 @@
+model:
+  params:
+    coral_weight: 0.1

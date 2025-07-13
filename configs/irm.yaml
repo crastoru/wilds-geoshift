@@ -1,0 +1,3 @@
+model:
+  params:
+    irm_weight: 0.1

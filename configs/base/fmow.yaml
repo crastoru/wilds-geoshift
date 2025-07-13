@@ -1,0 +1,63 @@
+training:
+  epochs: 5
+  seed: 2025
+
+checkpoint:
+  save_top_k: 1
+  monitor: 'val_loss'
+  mode: 'min'
+  filename: "{epoch:02d}-{val_acc_avg:.4f}-{val_acc_worst_region:.4f}-{val_loss:.4f}"
+
+dataset: 
+  class_reference: utils.data_utils.FMoWDataset
+  params:
+    randaug: false
+    clip_processor: openai/clip-vit-large-patch14-336
+    group_field: "region"
+    # combine_id_ood: True
+    # split_groups:
+    #   train:
+    #     # - "Africa"
+    #     - "Americas"
+    #     - "Asia"
+    #     - "Europe"
+    #     - "Oceania"
+    #     - "Other"
+    #   val:
+    #     # - "Africa"
+    #     - "Americas"
+    #     - "Asia"
+    #     - "Europe"
+    #     - "Oceania"
+    #     - "Other"
+
+data_loader:
+  batch_size: 16
+  uniform_over_groups: false
+
+grouper:
+  class_reference: wilds.common.grouper.CombinatorialGrouper
+  params:
+    groupby_fields: ["region"]
+
+model:
+  class_reference: models.lightning.fmow.FMoWLightning
+  params:
+    loc_encoder: "none"
+    multihead: false
+    d3g_beta: 0.0
+    d3g_loss_coeff: 0.0
+    coral_weight: 0
+    irm_weight: 0
+    lr_init: 0.0001
+    weight_decay: 0.0
+    dropout: 0
+    use_film: false
+    film_penalty: 0
+    film_lambda: 0
+    n_grad_accumulation: 8
+    lr_scheduler:
+      class_reference: torch.optim.lr_scheduler.StepLR
+      params:
+        step_size: 1
+        gamma: 0.96

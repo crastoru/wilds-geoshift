@@ -1,0 +1,3 @@
+[submodule "satclip"]
+	path = satclip
+	url = https://github.com/microsoft/satclip.git

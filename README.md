@@ -2,6 +2,8 @@
 
 Complete experiment code for the paper: [Robustness to Geographic Distribution Shift Using Location Encoders](https://arxiv.org/pdf/2503.02036). 
 
+![Overview of the geographic distribution shift framework using location encoders.](figure.png)
+
 
 ## Installation
 
