@@ -1,0 +1,20 @@
+# Uncomment this line if installing on GPU machines
+# --find-links https://data.pyg.org/whl/torch-2.0.1+cu117.html
+torch-scatter
+pytorch-lightning==2.0.3
+pandas==1.5.3
+azureml-mlflow
+matplotlib==3.7.1
+mercantile
+mlflow
+torch==2.0.1
+pylibtiff
+azure-ai-ml
+azureml-core
+python-dotenv
+wilds
+omegaconf
+transformers
+einops
+geoclip
+easydict

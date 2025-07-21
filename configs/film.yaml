@@ -1,0 +1,5 @@
+model:
+  params: 
+    use_film: true
+    film_penalty: 0.
+    film_lambda: 0.2
