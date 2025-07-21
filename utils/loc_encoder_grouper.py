@@ -4,8 +4,8 @@ from sklearn.cluster import KMeans
 from wilds.common.data_loaders import get_eval_loader
 from wilds.common.grouper import Grouper
 
+from data.base import GeoDatasetWrapper
 from models.location_encoder import LocationEncoder
-from utils.data_utils import GeoDatasetWrapper
 
 
 class LocEncoderGrouper(Grouper):

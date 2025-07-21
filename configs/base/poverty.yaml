@@ -9,7 +9,7 @@ checkpoint:
   filename: "{epoch:02d}-{val_r_all:.4f}-{val_r_wg:.4f}-{val_loss:.4f}"
 
 dataset: 
-  class_reference: utils.data_utils.PovertyMapDataset
+  class_reference: data.poverty.PovertyMapDataset
   params:
     fold: 'D'
 

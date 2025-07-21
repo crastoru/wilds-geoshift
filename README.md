@@ -19,7 +19,7 @@ Training options and hyperparameters are all specified in yaml config files loca
 
 Each dataset has a base config under `configs/base`, which corresponds to the baseline standard ERM configuration for that dataset. You will always need to specify exactly 1 base config.
 
-Other methods can then be chained on to the base config (the order does not matter). For example:
+Other (location-aware or location-free) domain adaptation methods can then be chained on to the base config. The ordering does not matter. For example:
 
 - To run training on PovertyMap using DCP and GeoCLIP location encoder features, use `--config fmow,geoclip,film`
 - To run training on FMoW using the IRM penalty and SatCLIP groups, use `--config fmow,irm,satclip`. To run training on FMoW using IRM with the default groups (e.g. continent splits for FMoW), use `--config fmow,irm`. 

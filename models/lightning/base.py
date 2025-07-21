@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from models.location_encoder import LocationEncoder
 from models.multihead import MultiHeadClassifier
 from utils.domain_adaptation import GroupDRO, coral_loss, irm_penalty
-from utils.satclip_grouper import SatCLIPGrouper
+from utils.loc_encoder_grouper import LocEncoderGrouper
 from utils.train_utils import get_class_by_name
 
 
@@ -93,7 +93,7 @@ class WILDSLightningBase(pl.LightningModule):
         raise NotImplementedError
 
     def metadata_to_group(self, metadata):
-        if isinstance(self.grouper, SatCLIPGrouper):
+        if isinstance(self.grouper, LocEncoderGrouper):
             return self.grouper.metadata_to_group(metadata)
         
         # wilds Grouper uses CPU, so move metadata off GPU

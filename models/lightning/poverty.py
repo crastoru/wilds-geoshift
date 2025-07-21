@@ -5,14 +5,13 @@ import uuid
 import matplotlib.pyplot as plt
 import mlflow
 import torch
-import torch.nn.functional as F
 from azure.core.exceptions import ResourceExistsError
 from PIL import Image
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 
+from data.poverty import PovertyMapDataset
 from models.image_encoder import ResNet18Encoder
 from models.lightning.base import WILDSLightningBase
-from utils.data_utils import POVERTY_RGB_MEAN, POVERTY_RGB_STD, PovertyMapDataset, denormalize
 
 
 class PovertyLightning(WILDSLightningBase):

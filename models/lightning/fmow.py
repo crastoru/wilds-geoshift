@@ -13,7 +13,7 @@ from wilds.datasets.fmow_dataset import categories as fmow_categories
 
 from models.image_encoder import CLIPEncoder
 from models.lightning.base import WILDSLightningBase
-from utils.data_utils import FMoWDataset
+from data.fmow import FMoWDataset
 
 
 class FMoWLightning(WILDSLightningBase):
