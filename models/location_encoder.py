@@ -9,7 +9,7 @@ from torch import nn
 from geoclip import LocationEncoder as GeoClipLocationEncoder
 
 sys.path.append(os.path.join(os.getcwd(), "satclip"))
-from satclip.satclip.load_lightweight import get_satclip_loc_encoder
+from satclip.load_lightweight import get_satclip_loc_encoder
 
 
 class Wrap(nn.Module):
