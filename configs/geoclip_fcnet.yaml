@@ -1,0 +1,5 @@
+model:
+  params: 
+    loc_encoder: "geoclip-fcnet"
+    freeze_loc_encoder: true
+    domain_predictor_weight: 0.2

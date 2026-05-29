@@ -1,0 +1,10 @@
+model:
+  params: 
+    loc_encoder: "groups"
+    use_loc_encoder_as_prior: true
+    freeze_loc_encoder: false
+    domain_predictor_weight: 0.2
+
+dataset: 
+  params:
+    return_image_preds: True

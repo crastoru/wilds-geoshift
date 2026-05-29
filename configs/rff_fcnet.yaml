@@ -1,0 +1,6 @@
+model:
+  params: 
+    loc_encoder: "rff-fcnet"
+    use_loc_encoder_as_prior: false
+    freeze_loc_encoder: true
+    domain_predictor_weight: 0.2

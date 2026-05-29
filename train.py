@@ -5,15 +5,15 @@ from math import floor
 
 import mlflow
 import pytorch_lightning as pl
+import tabulate
 import torch
 from lightning_fabric.utilities.seed import seed_everything
 from omegaconf import OmegaConf
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers import MLFlowLogger
 from pytorch_lightning.strategies import DDPStrategy
-from wilds.common.data_loaders import get_eval_loader, get_train_loader
+from torch.utils.data import DataLoader
 
-from utils.loc_encoder_grouper import LocEncoderGrouper
 from utils.train_utils import (find_best_checkpoint, get_class_by_name,
                                load_config)
 
@@ -30,6 +30,7 @@ def main():
     parser.add_argument("--config", type=str, required=True, help="List of config files, e.g. fmow,wraplinear,film")
     parser.add_argument("--loc-encoder-weights", type=str, required=False, help="Path to .ckpt file containing SatCLIP location encoder weights.") 
     parser.add_argument("--checkpoint", type=str, required=False, default='none', help="Path to checkpoint file. If 'none', train a new model.") 
+    parser.add_argument("--prithvi-weights", type=str, required=False, help="Path to .pt file containing Prithvi image encoder weights.")
     parser.add_argument("--experiment-name", type=str, default="wilds-geoshift")
 
     # need this for aml
@@ -54,63 +55,56 @@ def main():
 
     # Extract and load the dataset
     logger.info("Preparing dataset...")
-    data_wrapper = get_class_by_name(config.dataset.class_reference)(args.data_dir, **config.dataset.params)
-    
-    train_data = data_wrapper.get_split('train')
-    val_data = data_wrapper.get_split('val')
-    test_data = data_wrapper.get_split('test')
+    dataset_params = config.dataset.params if 'params' in config.dataset else {}
+    if 'TorchSpatial' not in config.dataset.class_reference and 'return_image_preds' in dataset_params:
+        dataset_params.pop('return_image_preds')
+    data_wrapper = get_class_by_name(config.dataset.class_reference)(args.data_dir, **dataset_params)
+
+    train_data = data_wrapper.get_split(config.data_loader.get('train_split', 'train'))
+    val_data = data_wrapper.get_split(config.data_loader.get('val_split', 'val'))
+    test_data = data_wrapper.get_split(config.data_loader.get('test_split', 'test'))
 
     logger.info(f"Splits: train {len(train_data)} | val {len(val_data)} | test {len(test_data)}")
         
-    if 'grouper' in config.keys():
-        grouper_cls = get_class_by_name(config.grouper.class_reference)
-        
-        if grouper_cls == LocEncoderGrouper:
-            grouper = grouper_cls(
-                data_wrapper, 
-                config.grouper.params.loc_encoder,
-                config.grouper.params.n_groups,
-                config.training.seed, 
-                device="cuda" if dev_count > 0 else "cpu", 
-                num_workers=cpus_per_gpu,
-                loc_encoder_weights=args.loc_encoder_weights if args.loc_encoder_weights else None
-            )
-        else:
-            grouper = grouper_cls(
-                data_wrapper.dataset,
-                **config.grouper.params
-            )
-    else:
+    if 'grouper' not in config.keys():
         grouper = None
+    else:
+        grouper = get_class_by_name(config.grouper.class_reference)(train_data.dataset, **config.grouper.params)
 
-    train_loader = get_train_loader(
-        "standard", 
-        train_data, 
-        grouper=grouper,
-        uniform_over_groups=config.data_loader.uniform_over_groups,
-        batch_size=config.data_loader.batch_size, 
+        # log counts per group in each split
+        _, train_counts = grouper.metadata_to_group(train_data.metadata_array, return_counts=True)
+        _, val_counts = grouper.metadata_to_group(val_data.metadata_array, return_counts=True)
+        _, test_counts = grouper.metadata_to_group(test_data.metadata_array, return_counts=True)
+        table = [
+            [grouper.group_str(i), train_counts[i], val_counts[i], test_counts[i]]
+            for i in range(grouper.n_groups)
+        ]
+
+        logger.info("\n" + tabulate.tabulate(
+            table,
+            headers=["Group", "Train", "Val", "Test"],
+            tablefmt="github"
+        ))
+
+    train_loader = DataLoader(
+        train_data,
+        batch_size=config.data_loader.batch_size,
+        shuffle=True,
         num_workers=train_loader_workers
     )
-    
-    val_loader = get_eval_loader(
-        "standard", 
-        val_data, 
-        batch_size=config.data_loader.batch_size, 
+
+    val_loader = DataLoader(
+        val_data,
+        batch_size=config.data_loader.batch_size,
+        shuffle=False,
         num_workers=valid_and_test_workers
     )
 
-    test_loader = get_eval_loader(
-        "standard",
-         test_data,
-         batch_size=config.data_loader.batch_size,
-         num_workers=valid_and_test_workers
-    )
-
-    model = get_class_by_name(config.model.class_reference)(
-          data_wrapper,
-          grouper=grouper,
-          loc_encoder_weights=args.loc_encoder_weights,
-          **config.model.params
+    test_loader = DataLoader(
+        test_data,
+        batch_size=config.data_loader.batch_size,
+        shuffle=False,
+        num_workers=valid_and_test_workers
     )
 
     mflow_logger = MLFlowLogger(
@@ -128,7 +122,7 @@ def main():
                 monitor=config.checkpoint.monitor,
                 mode=config.checkpoint.mode,
                 dirpath=str(checkpoint_dir),
-                filename=config.checkpoint.filename
+                filename=config.checkpoint.filename,
             )
     
         callbacks = [
@@ -138,7 +132,6 @@ def main():
         epochs = config.training.epochs
         
     else:
-        checkpoint_dir = args.checkpoint
         callbacks = []
         epochs = 0
 
@@ -154,16 +147,28 @@ def main():
         strategy=DDPStrategy(find_unused_parameters=True),
         precision="16-mixed",
         devices=1
-    )
+        )
 
-    trainer.fit(
-        model, 
-        train_dataloaders=train_loader, 
-        val_dataloaders=val_loader
-    )
+    if epochs > 0:
+        if 'image_encoder' in config.model.params and config.model.params.image_encoder == 'prithvi':
+            logger.info("Using Prithvi image encoder with weights from {}".format(args.prithvi_weights))
+            config.model.params['prithvi_weights'] = args.prithvi_weights
 
-    # hack to ensure hyperparameters are not re-logged at test time (MLFlow throws an error)
-    trainer.lightning_module._log_hyperparams = False  
+        model = get_class_by_name(config.model.class_reference)(
+            data_wrapper,
+            grouper=grouper,
+            loc_encoder_weights=args.loc_encoder_weights,
+            **config.model.params
+        )
+
+        trainer.fit(
+            model, 
+            train_dataloaders=train_loader, 
+            val_dataloaders=val_loader
+        )
+
+        # hack to ensure hyperparameters are not re-logged at test time (MLFlow throws an error)
+        trainer.lightning_module._log_hyperparams = False  
 
     if args.checkpoint == 'none':
         logger.info("Testing best model...")
@@ -173,7 +178,20 @@ def main():
         best_model_path = args.checkpoint
         logger.info(f"Loading checkpoint {best_model_path}...")
 
-    test_metrics = trainer.test(ckpt_path=best_model_path, dataloaders=test_loader, verbose=True)
+    if epochs > 0:
+        test_metrics = trainer.test(ckpt_path=best_model_path, dataloaders=test_loader, verbose=True, weights_only=False)
+    else:
+        model = get_class_by_name(config.model.class_reference).load_from_checkpoint(
+            best_model_path,
+            map_location="cuda" if dev_count > 0 else "cpu",
+            data_wrapper=data_wrapper,
+            grouper=grouper,
+            loc_encoder_weights=args.loc_encoder_weights,
+            **config.model.params
+        )
+        model.eval()
+        test_metrics = trainer.test(model, dataloaders=test_loader, verbose=True)
+
     logger.info(f"Test metrics: {test_metrics}")
 
 

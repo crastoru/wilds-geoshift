@@ -10,17 +10,25 @@ from PIL import Image
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 
 from data.poverty import PovertyMapDataset
-from models.image_encoder import ResNet18Encoder
-from models.lightning.base import WILDSLightningBase
+from models.domain_relations import GroupEncoder
+from models.image_encoder import ResNet18Encoder, Prithvi
+from models.lightning.base import LightningBase
+from utils.train_utils import get_class_by_name
 
 
-class PovertyLightning(WILDSLightningBase):
+class PovertyLightning(LightningBase):
     def __init__(
             self, 
             data_wrapper, 
+            image_encoder='resnet18',
+            prithvi_weights=None,
+            freeze_image_encoder=False,
             grouper=None,
             loc_encoder_weights=None,
             loc_encoder="none", 
+            freeze_loc_encoder=True,
+            use_loc_encoder_as_prior=False,
+            domain_predictor_weight=0.,
             multihead=True, 
             lr_init=1e-3,
             weight_decay=1e-2,
@@ -31,34 +39,74 @@ class PovertyLightning(WILDSLightningBase):
             film_penalty=0,
             film_lambda=0,
             d3g_beta=1.,
+            d3g_use_loc_encoder=False,
             dropout=0.1,
             d3g_loss_coeff=0.,
             group_dro=False,
-            n_grad_accumulation=1
+            n_grad_accumulation=1,
+            group_wise_logging=False
         ) -> None:
         assert isinstance(data_wrapper, PovertyMapDataset)
-        image_encoder = ResNet18Encoder(num_channels=8)
+        
+        if image_encoder == 'resnet18':
+            image_encoder = ResNet18Encoder(num_channels=8)
+        elif image_encoder == 'prithvi':
+            image_encoder = Prithvi(prithvi_weights, bands=[0, 1, 2, 6, 3, 4])
+
         image_encoder_out_dim = image_encoder.out_dim
 
-        super().__init__(data_wrapper, image_encoder_out_dim, grouper, loc_encoder_weights, loc_encoder, multihead, lr_init, weight_decay, lr_scheduler, 
-                         coral_weight, irm_weight, use_film, film_penalty, film_lambda, d3g_beta, dropout, d3g_loss_coeff, group_dro, n_grad_accumulation)
+        super().__init__(data_wrapper, image_encoder_out_dim, grouper, loc_encoder_weights, loc_encoder, freeze_loc_encoder, use_loc_encoder_as_prior, domain_predictor_weight, multihead, lr_init, weight_decay, lr_scheduler, 
+                         coral_weight, irm_weight, use_film, film_penalty, film_lambda, d3g_beta, d3g_use_loc_encoder, dropout, d3g_loss_coeff, group_dro, n_grad_accumulation, group_wise_logging)
 
         self.image_encoder = image_encoder
+        self.freeze_image_encoder = freeze_image_encoder
+        if self.freeze_image_encoder:
+            self.image_encoder.requires_grad_(False)
+
         self.loss = torch.nn.MSELoss(reduction='none')
         
     def forward(self, batch):
         x, _, metadata = batch
-        embed = self.image_encoder(x)
+        
+        if self.freeze_image_encoder:
+            with torch.no_grad():
+                embed = self.image_encoder(x)
+        else:
+            embed = self.image_encoder(x)
+        
         lonlat = self.data_wrapper.get_lon_lat(metadata)
-        if self.loc_encoder is not None:
-            loc_embed = self.loc_encoder(lonlat)
-            embed = torch.cat([embed, loc_embed], dim=1).to(embed.dtype)
-        if self.grouper is not None and self.classifier.num_heads > 1:
+        if self.grouper is not None:
             groups = self.metadata_to_group(metadata)
         else:
             groups = None
+
+        if self.loc_encoder is not None:
+            if isinstance(self.loc_encoder, GroupEncoder):
+                loc_embed = self.loc_encoder(groups)
+            else:
+                loc_embed = self.loc_encoder(lonlat)            
+            embed = torch.cat([embed, loc_embed], dim=1).to(embed.dtype)
+        else:
+            loc_embed = None
+
         result = self.classifier(embed, lonlat, groups)
-        return {'y_preds': result['logits'].float(), **result}
+        return {'y_preds': result['logits'].float(), 'loc_embed': loc_embed, **result}
+
+    def shared_epoch_end(self, stage: str):
+        if stage != 'train':
+            outputs = self.shared_step_metrics[stage]
+            all_y = torch.cat([o['y'] for o in outputs]).detach().cpu()
+            all_y_preds = torch.cat([o['y_preds'] for o in outputs]).detach().cpu()
+            all_metadata = torch.cat([o['metadata'] for o in outputs]).detach().cpu()
+            all_losses = torch.cat([o['losses'] for o in outputs]).detach().cpu()
+            
+            wilds_metrics, _ = self.data_wrapper.get_split(stage).eval(all_y_preds, all_y, all_metadata) 
+            metrics = {f"{stage}_{m}":wilds_metrics[m] for m in wilds_metrics}
+            metrics[f'{stage}_loss_avg'] = (all_losses.float().sum() / all_losses.shape[0]).item()
+
+            self.log_dict(metrics, prog_bar=False, sync_dist=True)
+
+        self.shared_step_metrics[stage] = []
 
     @rank_zero_only
     def plot(self, batch, batch_idx, y_preds, stage, n=5):
@@ -86,3 +134,40 @@ class PovertyLightning(WILDSLightningBase):
                 mlflow.log_image(img, out_f)
         except (ResourceExistsError, Exception):
             pass
+
+    def configure_optimizers(self):
+        classifier_optimizer = torch.optim.AdamW(list(self.classifier.parameters()), lr=self.lr_init, weight_decay=self.weight_decay)
+        classifier_scheduler = get_class_by_name(self.lr_scheduler_config.class_reference)(
+            classifier_optimizer,
+            **self.lr_scheduler_config.params
+        )
+
+        if self.freeze_image_encoder:
+            optimizers, schedulers = [classifier_optimizer], [classifier_scheduler]
+        else:
+            encoder_optimizer = torch.optim.AdamW(list(self.image_encoder.parameters()), lr=self.lr_init / 10, weight_decay=self.weight_decay)
+            encoder_scheduler = get_class_by_name(self.lr_scheduler_config.class_reference)(
+                encoder_optimizer,
+                **self.lr_scheduler_config.params
+            )
+            optimizers, schedulers = [classifier_optimizer, encoder_optimizer], [classifier_scheduler, encoder_scheduler]
+
+        if self.domain_predictor is not None:
+            domain_optimizer = torch.optim.AdamW(list(self.domain_predictor.parameters()), lr=self.lr_init, weight_decay=self.weight_decay)
+            domain_scheduler = get_class_by_name(self.lr_scheduler_config.class_reference)(
+                domain_optimizer,
+                **self.lr_scheduler_config.params
+            )
+            optimizers.append(domain_optimizer)
+            schedulers.append(domain_scheduler)
+
+        if self.loc_encoder is not None:
+            loc_encoder_optimizer = torch.optim.AdamW(list(self.loc_encoder.parameters()), lr=self.lr_init, weight_decay=self.weight_decay)
+            loc_encoder_scheduler = get_class_by_name(self.lr_scheduler_config.class_reference)(
+                loc_encoder_optimizer,
+                **self.lr_scheduler_config.params
+            )
+            optimizers.append(loc_encoder_optimizer)
+            schedulers.append(loc_encoder_scheduler)
+
+        return optimizers, schedulers

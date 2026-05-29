@@ -1,0 +1,83 @@
+training:
+  epochs: 50
+  seed: 2026
+
+checkpoint:
+  save_top_k: 1
+  monitor: 'val_acc_avg'
+  mode: 'max'
+  filename: "{epoch:02d}-{val_acc_avg:.4f}-{val_loss:.4f}"
+
+dataset: 
+  class_reference: data.inat.TorchSpatialiNat2018Dataset
+  params:
+    groupby_field: "biome_class_index"
+    return_image_preds: False
+    split_groups:
+      train:
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+        - 6
+        - 7
+        - 8
+        - 9
+        - 10
+        - 11
+        - 12
+        - 13
+        - 14
+      val:
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+        - 6
+        - 7
+        - 8
+        - 9
+        - 10
+        - 11
+        - 12
+        - 13
+        - 14
+
+data_loader:
+  batch_size: 1024
+  train_split: "train"
+  val_split: "val"
+  test_split: "val"
+
+grouper:
+  class_reference: wilds.common.grouper.CombinatorialGrouper
+  params:
+    groupby_fields: ["biome_class_index"]
+
+model:
+  class_reference: models.lightning.torchspatial.TorchSpatialClassification
+  params:
+    loc_encoder: "none"
+    freeze_loc_encoder: true
+    use_loc_encoder_as_prior: false
+    domain_predictor_weight: 0.0
+    multihead: false
+    d3g_beta: 0.0
+    d3g_loss_coeff: 0.0
+    coral_weight: 0
+    irm_weight: 0
+    lr_init: 0.001
+    weight_decay: 0.0
+    dropout: 0.0
+    use_film: false
+    film_penalty: 0
+    film_lambda: 0
+    n_grad_accumulation: 1
+    group_wise_logging: true
+    lr_scheduler:
+      class_reference: torch.optim.lr_scheduler.StepLR
+      params:
+        step_size: 1
+        gamma: 0.96

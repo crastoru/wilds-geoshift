@@ -1,3 +1,0 @@
-model:
-  params: 
-    loc_encoder: "wrap-linear"
