@@ -1,17 +1,17 @@
-# Robustness to Geographic Distribution Shift using Location Encoders
+# Latent Domain Modeling Improves Robustness to Geographic Shifts
 
-Complete experiment code for the paper: [Robustness to Geographic Distribution Shift Using Location Encoders](https://arxiv.org/pdf/2503.02036). 
+Complete experiment code for the paper "Latent Domain Modeling Improves Robustness to Geographic Shifts".
 
 ![Overview of the geographic distribution shift framework using location encoders.](figure.png)
 
 
 ## Installation
 
-1) Install Python dependencies using: `pip install -r requirements.txt`. Make sure to uncomment the first line of the `requirements.txt` file if you are installing for GPU machines.
+1) Install Python dependencies using: `pip install -r requirements.txt`.
 
-2) Download FMoW v1.1 ("fmow") or PovertyMap v1.1 ("poverty") dataset using `python get_wilds_dataset.py --dataset <dataset> --compress`.
+2) Download FMoW v1.1 ("fmow") or PovertyMap v1.1 ("poverty") dataset using `python get_wilds_dataset.py --dataset <dataset> --compress`. To download TorchSpatial datasets, follow the instructions in their [README](https://github.com/seai-lab/TorchSpatial?tab=readme-ov-file#dataset-download-instructions).
 
-3) Download the SatCLIP encoder weights from HuggingFace (if using SatCLIP): https://huggingface.co/models?other=arxiv:2311.17179
+3) Download the SatCLIP encoder weights from [HuggingFace](https://huggingface.co/models?other=arxiv:2311.17179) if using SatCLIP.
 
 
 ## Configs
@@ -23,7 +23,9 @@ Other (location-aware or location-free) domain adaptation methods can then be ch
 
 - To run training on PovertyMap using DCP and GeoCLIP location encoder features, use `--config fmow,geoclip,film`
 - To run training on FMoW using the IRM penalty and SatCLIP groups, use `--config fmow,irm,satclip`. To run training on FMoW using IRM with the default groups (e.g. continent splits for FMoW), use `--config fmow,irm`. 
-- To run standard ERM with WRAP features concatenated to image features, use `--config fmow,wraplinear`
+- To run standard ERM with WRAP features concatenated to image features, use `--config fmow,wrapfcnet`
+
+To use the auxiliary domain prediction head on top of any location encoder (with any fusion method), simply include a non-zero value for the `domain_predictor_weight` key in the location encoder config file.
 
 ## Training and Inference
 
@@ -40,13 +42,14 @@ To kick off training or inference, run:
 ## Citation
 
 ```
-@article{wildsgeoshift2025,
-      title={Robustness to Geographic Distribution Shift Using Location Encoders}, 
-      author={Ruth Crasto},
-      year={2025},
-      eprint={2503.02036},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2503.02036}, 
+@inproceedings{crasto2026geoshift,
+  author    = {Crasto, Ruth and Rolf, Esther},
+  title     = {Latent Domain Modeling Improves Robustness to Geographic Shifts},
+  booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Findings},
+  year      = {2026},
+  eprint    = {2503.02036},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.LG},
+  doi       = {10.48550/arXiv.2503.02036}
 }
 ```

@@ -40,7 +40,7 @@ class PovertyMapDataset(WILDSDatasetWrapper):
         def normalize_rgb_in_poverty_ms_img(ms_img):
             result = ms_img.detach().clone()
             result[:3] = (result[:3] - poverty_rgb_means) / poverty_rgb_stds
-            return ms_img
+            return result
 
         color_transform = transforms.Compose([
             transforms.Lambda(lambda ms_img: unnormalize_rgb_in_poverty_ms_img(ms_img)),
@@ -54,20 +54,7 @@ class PovertyMapDataset(WILDSDatasetWrapper):
         return ms_img
 
     def _load_transform(self, split: str):
-        if split != 'train':
-            return None  # No transforms for validation and test splits
-        
-        # PovertyMap comes normalized by default
-        transform = transforms.ColorJitter(brightness=0.8, contrast=0.8, saturation=0.8, hue=0.1)
-
-        return transforms.Compose([
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomVerticalFlip(),
-            transforms.Lambda(lambda ms_img: self.poverty_rgb_color_transform(ms_img, transform)),
-        ])
+        return None
     
     def _load_inverse_transform(self, split):
-        if split == 'train':
-            raise ValueError("Cannot perform inverse transform on training data.")
-        else:
-            return lambda t: denormalize(t, POVERTY_RGB_MEAN, 2 * POVERTY_RGB_STD).permute(1, 2, 0).numpy()
+        return lambda t: denormalize(t, POVERTY_RGB_MEAN, 2 * POVERTY_RGB_STD).permute(1, 2, 0).numpy()

@@ -3,3 +3,4 @@ model:
     multihead: true
     d3g_beta: 0.8
     d3g_loss_coeff: 0.5
+    d3g_use_loc_encoder: true

@@ -36,9 +36,9 @@ class WILDSDatasetWrapper(GeoDatasetWrapper):
             raise ValueError(f"Could not find {data_folder_name} or {data_folder_name}.tar.gz at {data_dir}")
 
         # Load the full WILDSDataset
-        dataset = get_dataset(dataset=dataset_name, root_dir=root_dir, download=False, **dataset_kwargs)
+        self._dataset = get_dataset(dataset=dataset_name, root_dir=root_dir, download=False, **dataset_kwargs)
 
-        valid_splits = list(dataset._split_names.keys())
+        valid_splits = list(self._dataset._split_names.keys())
         if splits is not None:
             for split in splits:
                 if split not in valid_splits:
@@ -52,7 +52,7 @@ class WILDSDatasetWrapper(GeoDatasetWrapper):
             splits.remove('id_test')
             
         # Load and transform the splits
-        super().__init__(dataset, splits, group_field=group_field, split_groups=split_groups, combine_id_ood=combine_id_ood)
+        super().__init__(splits, group_field=group_field, split_groups=split_groups, combine_id_ood=combine_id_ood)
 
         # Add lat/lon to metadata (not included by default)
         if 'lat' not in self._dataset.metadata.keys() or 'lon' not in self._dataset.metadata.keys():
@@ -92,6 +92,9 @@ class WILDSDatasetWrapper(GeoDatasetWrapper):
         lat = metadata[:, self._dataset.metadata_fields.index('lat')]
         return torch.stack([lon, lat], dim=1)
 
+    def get_metadata_fields(self):
+        return self._dataset.metadata_fields
+
     def add_to_metadata(self, name, metadata, indices, default_value):
         """
         Add another field to this dataset's metadata.
@@ -106,11 +109,12 @@ class WILDSDatasetWrapper(GeoDatasetWrapper):
         all_metadata_len = self._dataset.metadata_array.shape[0]
         assert len(indices) <= all_metadata_len
 
-        all_metadata = torch.zeros(all_metadata_len) + default_value
-        all_metadata[indices] = torch.tensor(metadata, dtype=all_metadata.dtype)
-        all_metadata = all_metadata.unsqueeze(-1)
+        metadata = torch.from_numpy(np.array(metadata)) if not torch.is_tensor(metadata) else metadata
+        all_metadata_new_field = torch.zeros(all_metadata_len, dtype=metadata.dtype) + default_value
+        all_metadata_new_field[indices] = metadata
+        all_metadata_new_field = all_metadata_new_field.unsqueeze(-1)
 
-        self._dataset._metadata_array = torch.cat([self._dataset.metadata_array, all_metadata], dim=1)
+        self._dataset._metadata_array = torch.cat([self._dataset.metadata_array, all_metadata_new_field], dim=1)
         self._dataset._metadata_fields.append(name)
 
         for split in self._splits:

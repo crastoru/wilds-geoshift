@@ -1,23 +1,39 @@
 import torch
 import torch.nn as nn
 
-from models.domain_relations import D3GRelation
+from models.domain_relations import D3GRelation, GroupEncoder
 from models.location_encoder import ConditionalLinear, LocationEncoder
 
 
 class MultiHeadClassifier(nn.Module):
-    def __init__(self, num_heads, encoder_dim, num_classes, dropout=0.1, beta=0, use_film=False, loc_encoder="none", loc_encoder_weights=None):
+    def __init__(
+            self, 
+            num_heads, 
+            encoder_dim, 
+            num_classes, 
+            dropout=0.1, 
+            beta=0,
+            n_groups=0, 
+            d3g_use_loc_encoder=False, 
+            use_film=False, 
+            loc_encoder="none", 
+            loc_encoder_weights=None, 
+            freeze_loc_encoder=False
+        ) -> None:
         super().__init__()
         self.num_classes = num_classes
         self.num_heads = num_heads
         self.use_film = use_film
         self._device = "cpu"  # device can be set later
 
-        if loc_encoder != "none" and (self.use_film or self.num_heads > 1):
-            print("Using location encoder {} in multi-head classifier".format(loc_encoder))
-            frozen = not self.use_film  # if using FiLM, we want to train the location encoder
-            self.loc_encoder = LocationEncoder(loc_encoder, loc_encoder_weights, self._device, frozen=frozen)
-            self.z_dim = self.loc_encoder.out_dim
+        if loc_encoder != "none" and self.use_film:
+            print("Using location encoder {} in multi-head classifier with frozen={}".format(loc_encoder, freeze_loc_encoder))
+            if loc_encoder == "groups":
+                self.loc_encoder = GroupEncoder(n_groups, 256)
+                self.z_dim = 256
+            else:
+                self.loc_encoder = LocationEncoder(loc_encoder, loc_encoder_weights, self._device, frozen=freeze_loc_encoder)
+                self.z_dim = self.loc_encoder.out_dim
         else:
             self.loc_encoder = None
             self.z_dim = 0
@@ -28,16 +44,24 @@ class MultiHeadClassifier(nn.Module):
             ) for _ in range(self.num_heads)])
         
         if self.num_heads > 1:
-            self.domain_relation = D3GRelation(beta, 256, self.loc_encoder)
+            if d3g_use_loc_encoder:
+                self.domain_relation = D3GRelation(beta, 256, loc_encoder.strip('fcnet'), loc_encoder_weights, n_groups, freeze_loc_encoder)
+            else:
+                self.domain_relation = D3GRelation(beta, 256)
 
     def set_device(self, device):
         self._device = device
         if self.loc_encoder is not None:
             self.loc_encoder.set_device(device)
+        if self.num_heads > 1:
+            self.domain_relation.set_device(device)
 
     def forward(self, embed, lonlat, groups=None):
         if self.loc_encoder and self.use_film:
-            z = self.loc_encoder(lonlat)
+            if isinstance(self.loc_encoder, GroupEncoder):
+                z = self.loc_encoder(groups)
+            else:
+                z = self.loc_encoder(lonlat)
             inputs = {'x':embed, 'z':z.to(embed.dtype)}
         else:
             inputs = {'x':embed} 
@@ -46,7 +70,9 @@ class MultiHeadClassifier(nn.Module):
 
         if self.num_heads > 1:
             # Get D3G domain weights
-            domain_weights = torch.cat([self.domain_relation(groups, lonlat, torch.tensor(i, device=torch.device(self._device))) for i in range(self.num_heads)], dim=1)
+            domain_relation_output = [self.domain_relation(groups, lonlat, torch.tensor(i, device=torch.device(self._device))) for i in range(self.num_heads)]
+            result['loc_embed'] = domain_relation_output[0]['loc_embed']
+            domain_weights = torch.cat([d['weights'] for d in domain_relation_output], dim=1)
             domain_weights = domain_weights.unsqueeze(-1)  # batch_size x num_heads x 1
             
             # Get outputs from each prediction head
@@ -76,5 +102,3 @@ class MultiHeadClassifier(nn.Module):
                 result['z'] = outputs['z']
 
         return result
-
-

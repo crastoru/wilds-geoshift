@@ -17,9 +17,9 @@ class GroupDRO:
 
     def reweighted_loss(self, groups, losses):
         group_losses = torch.zeros(self.n_groups).to(self._device)
-        for i in range(self.n_groups):
-            if any(groups == i):
-                group_losses[i] = torch.mean(losses[groups == i])
+        per_group_losses = compute_per_group_losses(groups, losses, detach=False)
+        for i in per_group_losses.keys():
+            group_losses[i] = per_group_losses[i]
         loss = self.group_weights @ group_losses
         return loss, group_losses.detach()
 
@@ -67,7 +67,6 @@ def coral_loss(groups, features, device):
     return penalty
 
 
-
 # Adapted from: https://github.com/p-lambda/wilds/blob/main/examples/algorithms/IRM.py
 def irm_penalty(groups, logits, y, loss_fn, device):
     """Group-wise gradient norm penalty for Invariant Risk Minimization (IRM)."""
@@ -81,3 +80,15 @@ def irm_penalty(groups, logits, y, loss_fn, device):
         grad_2 = autograd.grad(group_losses[1::2].mean(), [scale], create_graph=True)[0]
         penalty += torch.sum(grad_1 * grad_2)
     return penalty
+
+
+def compute_per_group_losses(groups, losses, detach=True):
+    """Compute per-group losses."""
+    groups, group_indices, _ = split_into_groups(groups)
+    all_group_losses = {}
+    for group, i_group in zip(groups, group_indices):
+        group_loss = torch.mean(losses[i_group])
+        if detach:
+            group_loss = group_loss.detach().cpu().clone()
+        all_group_losses[int(group.item())] = group_loss
+    return all_group_losses
